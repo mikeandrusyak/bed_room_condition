@@ -7,6 +7,12 @@ import chainable_led
 
 # --- PIN CONFIGURATION (fixed for nRF52840) ---
 
+LED_BRIGHTNESS = 0.15
+
+
+def scale_color(color, brightness):
+    return tuple(int(channel * brightness) for channel in color)
+
 # 1. Light sensor (Grove port A0)
 light_sensor = analogio.AnalogIn(board.A0)
 
@@ -14,7 +20,7 @@ light_sensor = analogio.AnalogIn(board.A0)
 dht = adafruit_dht.DHT11(board.A2)
 
 # 3. 4-Digit Display (Grove port D2)
-# Для Feather nRF52840: Grove D2 = D11 (CLK) та D12 (DIO)
+# For Feather nRF52840: Grove D2 = D5 (CLK) and D6 (DIO)
 display = tm1637lib.Grove4DigitDisplay(board.D5, board.D6)
 
 # 4. RGB LED (Grove port D4)
@@ -43,11 +49,11 @@ while True:
 
             # LED comfort logic
             if temperature < 19:
-                leds.fill((0, 0, 255))     # Cold -> Blue
+                leds.fill(scale_color((0, 0, 255), LED_BRIGHTNESS))     # Cold -> Blue
             elif temperature > 24:
-                leds.fill((255, 0, 0))     # Hot -> Red
+                leds.fill(scale_color((255, 0, 0), LED_BRIGHTNESS))     # Hot -> Red
             else:
-                leds.fill((0, 255, 0))     # Comfortable -> Green
+                leds.fill(scale_color((0, 255, 0), LED_BRIGHTNESS))     # Comfortable -> Green
             leds.write()
 
     except RuntimeError as e:
