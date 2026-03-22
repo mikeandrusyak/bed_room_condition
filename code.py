@@ -13,9 +13,9 @@ light_sensor = analogio.AnalogIn(board.A0)
 # 2. Temperature/humidity sensor DHT11 (Grove port A2)
 dht = adafruit_dht.DHT11(board.A2)
 
-# 3. 4-Digit Display (Grove port A4)
-# Port A4 uses pins A4 and A5
-display = tm1637lib.Grove4DigitDisplay(board.A4, board.A5)
+# 3. 4-Digit Display (Grove port D2)
+# Для Feather nRF52840: Grove D2 = D11 (CLK) та D12 (DIO)
+display = tm1637lib.Grove4DigitDisplay(board.D5, board.D6)
 
 # 4. RGB LED (Grove port D4)
 # On the nRF52840 board, Grove port D4 = pins D9 and D10
