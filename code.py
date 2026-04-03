@@ -10,9 +10,9 @@ import chainable_led
 # --- PIN CONFIGURATION (fixed for nRF52840) ---
 
 LED_BRIGHTNESS = 0.02
-DISPLAY_CLK_PIN = board.D2
-DISPLAY_DIO_PIN = board.D3
-RED_LED_PIN = board.A4
+DISPLAY_CLK_PIN = board.A4
+DISPLAY_DIO_PIN = board.A5
+RED_LED_PIN = board.D5
 SOUND_DIGITAL_PIN = board.A2
 SOUND_ACTIVE_STATE = True
 
@@ -63,8 +63,12 @@ def read_gas_channel(i2c_bus, channel):
     finally:
         i2c_bus.unlock()
 
-# 5. 4-Digit Display (Grove port A4)
+# 5. 4-Digit Display (Grove port A4 -> A4 CLK, A5 DIO)
 display = tm1637lib.Grove4DigitDisplay(DISPLAY_CLK_PIN, DISPLAY_DIO_PIN)
+display.set_brightness(tm1637lib.BRIGHT_HIGHEST)
+display.show(8888)
+time.sleep(0.6)
+display.clear()
 
 # 6. RGB LED (Grove port D4)
 # On the nRF52840 board, Grove port D4 = pins D9 and D10
@@ -72,7 +76,7 @@ num_leds = 1
 leds = chainable_led.P9813(board.D9, board.D10, num_leds)
 leds.reset()
 
-# 7. Grove Red LED (connected to Grove port D2)
+# 7. Grove Red LED (connected to Grove port D2 -> nRF52840 D5)
 red_led = digitalio.DigitalInOut(RED_LED_PIN)
 red_led.direction = digitalio.Direction.OUTPUT
 red_led.value = False
@@ -141,7 +145,6 @@ while True:
             sound_alarm
         )
         red_led.value = non_co2_not_ok
-        print("Alarm LED: " + ("ON" if non_co2_not_ok else "OFF"))
 
     # Read Multichannel Gas Sensor v2
     no2 = read_gas_channel(i2c, 1)   # NO2
