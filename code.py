@@ -13,8 +13,9 @@ LED_BRIGHTNESS = 0.02
 DISPLAY_CLK_PIN = board.A4
 DISPLAY_DIO_PIN = board.A5
 RED_LED_PIN = board.D5
-SOUND_DIGITAL_PIN = board.A2
-SOUND_ACTIVE_STATE = True
+SOUND_ANALOG_PIN = board.A2
+SOUND_WINDOW_SAMPLES = 32
+SOUND_ACTIVITY_THRESHOLD = 2500
 
 # CO2 thresholds (ppm)
 CO2_FRESH_MAX = 600
@@ -34,9 +35,8 @@ def scale_color(color, brightness):
 # 1. Light sensor (Grove port A0)
 light_sensor = analogio.AnalogIn(board.A0)
 
-# 2. Sound sensor (digital)
-sound_sensor = digitalio.DigitalInOut(SOUND_DIGITAL_PIN)
-sound_sensor.direction = digitalio.Direction.INPUT
+# 2. Sound sensor (analog)
+sound_sensor = analogio.AnalogIn(SOUND_ANALOG_PIN)
 
 # 3. SCD30 — CO2, Temperature, Humidity (Grove I2C port)
 i2c = busio.I2C(board.SCL, board.SDA)
@@ -111,8 +111,17 @@ print("Gas baseline — NO2: " + str(GAS_BASELINE_NO2) + " | ETH: " + str(GAS_BA
 while True:
     # Read sensors
     light_level = light_sensor.value
-    sound_level = 1 if sound_sensor.value else 0
-    sound_alarm = (sound_sensor.value == SOUND_ACTIVE_STATE)
+    # Use peak-to-peak amplitude over a short window so the value reacts to speech/music.
+    sound_min = 65535
+    sound_max = 0
+    for _ in range(SOUND_WINDOW_SAMPLES):
+        sample = sound_sensor.value
+        if sample < sound_min:
+            sound_min = sample
+        if sample > sound_max:
+            sound_max = sample
+    sound_level = sound_max - sound_min
+    sound_alarm = sound_level >= SOUND_ACTIVITY_THRESHOLD
 
     # Read SCD30 (CO2 + Temperature + Humidity)
     if scd30.data_available:
