@@ -23,8 +23,6 @@ CO2_GOOD_MAX = 800
 CO2_WARN_MAX = 1500
 
 # Non-CO2 normal ranges
-TEMP_MIN = 19
-TEMP_MAX = 24
 HUMIDITY_MIN = 40
 HUMIDITY_MAX = 60
 
@@ -79,12 +77,8 @@ leds.reset()
 # 7. Grove Red LED (connected to Grove port D2 -> nRF52840 D5)
 red_led = digitalio.DigitalInOut(RED_LED_PIN)
 red_led.direction = digitalio.Direction.OUTPUT
-red_led.value = False
-
-print("=== bed_room_condition system started ===")
-print("Testing red LED...")
 red_led.value = True
-time.sleep(2.0)
+time.sleep(0.6)
 red_led.value = False
 
 # --- GAS SENSOR BASELINE CALIBRATION ---
@@ -121,7 +115,6 @@ while True:
         if sample > sound_max:
             sound_max = sample
     sound_level = sound_max - sound_min
-    sound_alarm = sound_level >= SOUND_ACTIVITY_THRESHOLD
 
     # Read SCD30 (CO2 + Temperature + Humidity)
     if scd30.data_available:
@@ -147,12 +140,9 @@ while True:
 
         # Red LED alarm for non-CO2 parameters
         non_co2_not_ok = (
-            temperature < TEMP_MIN or
-            temperature > TEMP_MAX or
             humidity < HUMIDITY_MIN or
-            humidity > HUMIDITY_MAX or
-            sound_alarm
-        )
+            humidity > HUMIDITY_MAX 
+            )
         red_led.value = non_co2_not_ok
 
     # Read Multichannel Gas Sensor v2
