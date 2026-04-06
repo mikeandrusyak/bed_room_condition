@@ -6,6 +6,10 @@ import digitalio
 import adafruit_scd30
 import tm1637lib
 import chainable_led
+import adafruit_connection_manager
+from adafruit_esp32spi import adafruit_esp32spi
+import adafruit_minimqtt.adafruit_minimqtt as MQTT
+import secrets
 
 # --- PIN CONFIGURATION (fixed for nRF52840) ---
 
@@ -25,6 +29,11 @@ CO2_WARN_MAX = 1500
 # Non-CO2 normal ranges
 HUMIDITY_MIN = 40
 HUMIDITY_MAX = 60
+
+# ThingSpeak MQTT
+TS_MQTT_BROKER = "mqtt3.thingspeak.com"
+TS_MQTT_TOPIC = "channels/" + secrets.TS_CHANNEL_ID + "/publish"
+PUBLISH_INTERVAL = 15.0  # seconds (ThingSpeak free tier minimum)
 
 
 def scale_color(color, brightness):
@@ -81,6 +90,42 @@ red_led.value = True
 time.sleep(0.6)
 red_led.value = False
 
+# --- ESP32 AIRLIFT WIFI + MQTT SETUP ---
+
+# FeatherWing ESP32 AirLift pins (nRF52840)
+esp32_cs  = digitalio.DigitalInOut(board.D13)
+esp32_rdy = digitalio.DigitalInOut(board.D11)
+esp32_rst = digitalio.DigitalInOut(board.D12)
+spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_rdy, esp32_rst)
+
+print("Connecting to WiFi:", secrets.WIFI_SSID)
+while not esp.is_connected:
+    try:
+        esp.connect_AP(secrets.WIFI_SSID, secrets.WIFI_PASSWORD)
+    except RuntimeError as e:
+        print("WiFi error, retrying:", e)
+print("WiFi connected, IP:", esp.pretty_ip(esp.ip_address))
+time.sleep(2)  # let DHCP/DNS settle before first socket use
+
+pool = adafruit_connection_manager.get_radio_socketpool(esp)
+mqtt_client = MQTT.MQTT(
+    broker=TS_MQTT_BROKER,
+    client_id=secrets.TS_MQTT_CLIENT_ID,
+    username=secrets.TS_MQTT_USERNAME,
+    password=secrets.TS_MQTT_PASSWORD,
+    socket_pool=pool,
+)
+
+while True:
+    try:
+        mqtt_client.connect()
+        break
+    except Exception as e:
+        print("MQTT connect error, retrying in 5s:", e)
+        time.sleep(5)
+print("MQTT connected to", TS_MQTT_BROKER)
+
 # --- GAS SENSOR BASELINE CALIBRATION ---
 # Wait for sensor warm-up, then record baseline in (assumed) fresh air
 _baseline_samples = 5
@@ -102,6 +147,8 @@ GAS_BASELINE_CO  = _co_sum  // _baseline_samples
 print("Gas baseline — NO2: " + str(GAS_BASELINE_NO2) + " | ETH: " + str(GAS_BASELINE_ETH) + " | VOC: " + str(GAS_BASELINE_VOC) + " | CO: " + str(GAS_BASELINE_CO))
 
 # --- MAIN LOOP ---
+last_publish = time.monotonic() - PUBLISH_INTERVAL  # publish immediately on first reading
+co2 = temperature = humidity = None  # last known SCD30 values
 while True:
     # Read sensors
     light_level = light_sensor.value
@@ -156,5 +203,25 @@ while True:
                 return 0
             return int((val - base) * 100 / base)
         print("Gas - NO2: " + str(no2) + " (" + str(pct(no2, GAS_BASELINE_NO2)) + "%) | ETH: " + str(eth) + " (" + str(pct(eth, GAS_BASELINE_ETH)) + "%) | VOC: " + str(voc) + " (" + str(pct(voc, GAS_BASELINE_VOC)) + "%) | CO: " + str(co) + " (" + str(pct(co, GAS_BASELINE_CO)) + "%)")
+
+    # Publish to ThingSpeak every PUBLISH_INTERVAL seconds
+    now = time.monotonic()
+    if now - last_publish >= PUBLISH_INTERVAL and co2 is not None and no2 is not None:
+        payload = (
+            "field1=" + str(int(co2)) +
+            "&field2=" + str(round(temperature, 1)) +
+            "&field3=" + str(round(humidity, 1)) +
+            "&field4=" + str(light_level) +
+            "&field5=" + str(sound_level) +
+            "&field6=" + str(no2) +
+            "&field7=" + str(voc) +
+            "&field8=" + str(co)
+        )
+        try:
+            mqtt_client.publish(TS_MQTT_TOPIC, payload)
+            print("Published to ThingSpeak")
+        except Exception as e:
+            print("Publish error:", e)
+        last_publish = now
 
     time.sleep(2.0)
