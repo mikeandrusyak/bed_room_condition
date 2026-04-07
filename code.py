@@ -13,7 +13,8 @@ import secrets
 
 # --- PIN CONFIGURATION (fixed for nRF52840) ---
 
-LED_BRIGHTNESS = 0.02
+LED_BRIGHTNESS = 0.005          # reduced for sleep (was 0.02)
+TEMPERATURE_OFFSET = -2.0       # SCD30 reads ~2°C high due to board heat
 DISPLAY_CLK_PIN = board.A4
 DISPLAY_DIO_PIN = board.A5
 RED_LED_PIN = board.D5
@@ -72,7 +73,7 @@ def read_gas_channel(i2c_bus, channel):
 
 # 5. 4-Digit Display (Grove port A4 -> A4 CLK, A5 DIO)
 display = tm1637lib.Grove4DigitDisplay(DISPLAY_CLK_PIN, DISPLAY_DIO_PIN)
-display.set_brightness(tm1637lib.BRIGHT_HIGHEST)
+display.set_brightness(tm1637lib.BRIGHT_DARKEST)
 display.show(8888)
 time.sleep(0.6)
 display.clear()
@@ -92,6 +93,8 @@ red_led.value = False
 
 # --- ESP32 AIRLIFT WIFI + MQTT SETUP ---
 
+time.sleep(3)  # wait for ESP32 AirLift to boot after cold power-on
+
 # FeatherWing ESP32 AirLift pins (nRF52840)
 esp32_cs  = digitalio.DigitalInOut(board.D13)
 esp32_rdy = digitalio.DigitalInOut(board.D11)
@@ -100,6 +103,8 @@ spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_rdy, esp32_rst)
 
 print("Connecting to WiFi:", secrets.WIFI_SSID)
+leds.fill(scale_color((255, 255, 255), LED_BRIGHTNESS))  # white = connecting
+leds.write()
 while not esp.is_connected:
     try:
         esp.connect_AP(secrets.WIFI_SSID, secrets.WIFI_PASSWORD)
@@ -125,6 +130,11 @@ while True:
         print("MQTT connect error, retrying in 5s:", e)
         time.sleep(5)
 print("MQTT connected to", TS_MQTT_BROKER)
+leds.fill(scale_color((0, 255, 0), LED_BRIGHTNESS))  # green = connected
+leds.write()
+time.sleep(1)
+leds.fill((0, 0, 0))  # off until first CO2 reading
+leds.write()
 
 # --- GAS SENSOR BASELINE CALIBRATION ---
 # Wait for sensor warm-up, then record baseline in (assumed) fresh air
@@ -166,7 +176,7 @@ while True:
     # Read SCD30 (CO2 + Temperature + Humidity)
     if scd30.data_available:
         co2         = scd30.CO2
-        temperature = scd30.temperature
+        temperature = scd30.temperature + TEMPERATURE_OFFSET
         humidity    = scd30.relative_humidity
 
         print("CO2: " + str(int(co2)) + " ppm | Temp: " + str(round(temperature, 1)) + " C | Humidity: " + str(round(humidity, 1)) + " % | Light: " + str(light_level) + " | Sound: " + str(sound_level))
