@@ -13,7 +13,7 @@ import secrets
 
 # --- PIN CONFIGURATION (fixed for nRF52840) ---
 
-LED_BRIGHTNESS = 0.005          # reduced for sleep (was 0.02)
+LED_BRIGHTNESS = 0.004          # dimmed further to make colors easier to distinguish
 TEMPERATURE_OFFSET = -2.0       # SCD30 reads ~2°C high due to board heat
 DISPLAY_CLK_PIN = board.A4
 DISPLAY_DIO_PIN = board.A5
@@ -22,10 +22,9 @@ SOUND_ANALOG_PIN = board.A2
 SOUND_WINDOW_SAMPLES = 32
 SOUND_ACTIVITY_THRESHOLD = 2500
 
-# CO2 thresholds (ppm)
-CO2_FRESH_MAX = 600
-CO2_GOOD_MAX = 800
-CO2_WARN_MAX = 1500
+# CO2 thresholds (ppm) for a simpler 3-color indicator
+CO2_FRESH_MAX = 650
+CO2_GOOD_MAX = 1000
 
 # Non-CO2 normal ranges
 HUMIDITY_MIN = 40
@@ -184,15 +183,13 @@ while True:
         # Show temperature on display
         display.show(int(temperature))
 
-        # RGB LED: indicate CO2 level (4 colors)
+        # RGB LED: indicate CO2 level (3 colors)
         if co2 <= CO2_FRESH_MAX:
             leds.fill(scale_color((0, 0, 255), LED_BRIGHTNESS))     # Fresh air -> Blue
         elif co2 <= CO2_GOOD_MAX:
-            leds.fill(scale_color((0, 255, 0), LED_BRIGHTNESS))     # Good indoor level -> Green
-        elif co2 <= CO2_WARN_MAX:
-            leds.fill(scale_color((255, 80, 0), LED_BRIGHTNESS))    # Comfort limit / warning -> Orange
+            leds.fill(scale_color((0, 255, 0), LED_BRIGHTNESS))     # Acceptable indoor level -> Green
         else:
-            leds.fill(scale_color((255, 0, 0), LED_BRIGHTNESS))     # Poor air quality -> Red
+            leds.fill(scale_color((255, 0, 0), LED_BRIGHTNESS))     # Ventilate room -> Red
         leds.write()
 
         # Red LED alarm for non-CO2 parameters
