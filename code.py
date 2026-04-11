@@ -3,6 +3,8 @@ import board
 import busio
 import analogio
 import digitalio
+import microcontroller
+import watchdog
 import adafruit_scd30
 import tm1637lib
 import chainable_led
@@ -34,6 +36,12 @@ HUMIDITY_MAX = 60
 TS_MQTT_BROKER = "mqtt3.thingspeak.com"
 TS_MQTT_TOPIC = "channels/" + secrets.TS_CHANNEL_ID + "/publish"
 PUBLISH_INTERVAL = 15.0  # seconds (ThingSpeak free tier minimum)
+WATCHDOG_TIMEOUT = 60.0  # seconds
+
+
+def feed_watchdog():
+    # Feed often in normal operation; true hard hangs will still trigger reset.
+    microcontroller.watchdog.feed()
 
 
 def scale_color(color, brightness):
@@ -104,11 +112,19 @@ esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_rdy, esp32_rst)
 print("Connecting to WiFi:", secrets.WIFI_SSID)
 leds.fill(scale_color((255, 255, 255), LED_BRIGHTNESS))  # white = connecting
 leds.write()
+
+# Reset board if the interpreter gets stuck for too long.
+microcontroller.watchdog.timeout = WATCHDOG_TIMEOUT
+microcontroller.watchdog.mode = watchdog.WatchDogMode.RESET
+feed_watchdog()
+
 while not esp.is_connected:
     try:
+        feed_watchdog()
         esp.connect_AP(secrets.WIFI_SSID, secrets.WIFI_PASSWORD)
     except RuntimeError as e:
         print("WiFi error, retrying:", e)
+        feed_watchdog()
 print("WiFi connected, IP:", esp.pretty_ip(esp.ip_address))
 time.sleep(2)  # let DHCP/DNS settle before first socket use
 
@@ -122,26 +138,32 @@ mqtt_client = MQTT.MQTT(
 )
 
 def ensure_wifi_connected():
+    feed_watchdog()
     if esp.is_connected:
         return
     print("WiFi disconnected, reconnecting...")
     while not esp.is_connected:
         try:
+            feed_watchdog()
             esp.connect_AP(secrets.WIFI_SSID, secrets.WIFI_PASSWORD)
         except RuntimeError as e:
             print("WiFi reconnect error, retrying:", e)
             time.sleep(2)
+            feed_watchdog()
 
 
 def connect_mqtt_with_retry():
     while True:
         try:
+            feed_watchdog()
             ensure_wifi_connected()
             mqtt_client.connect()
+            feed_watchdog()
             return
         except Exception as e:
             print("MQTT connect error, retrying in 5s:", e)
             time.sleep(5)
+            feed_watchdog()
 
 
 connect_mqtt_with_retry()
@@ -177,6 +199,7 @@ last_publish = time.monotonic() - PUBLISH_INTERVAL  # publish immediately on fir
 co2 = temperature = humidity = None  # last known SCD30 values
 while True:
     try:
+        feed_watchdog()
         # Read sensors
         light_level = light_sensor.value
         # Use peak-to-peak amplitude over a short window so the value reacts to speech/music.
@@ -272,6 +295,8 @@ while True:
                 connect_mqtt_with_retry()
 
         time.sleep(2.0)
+        feed_watchdog()
     except Exception as e:
         print("Loop error, continuing:", e)
         time.sleep(2.0)
+        feed_watchdog()
