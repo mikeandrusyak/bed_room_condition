@@ -121,13 +121,30 @@ mqtt_client = MQTT.MQTT(
     socket_pool=pool,
 )
 
-while True:
-    try:
-        mqtt_client.connect()
-        break
-    except Exception as e:
-        print("MQTT connect error, retrying in 5s:", e)
-        time.sleep(5)
+def ensure_wifi_connected():
+    if esp.is_connected:
+        return
+    print("WiFi disconnected, reconnecting...")
+    while not esp.is_connected:
+        try:
+            esp.connect_AP(secrets.WIFI_SSID, secrets.WIFI_PASSWORD)
+        except RuntimeError as e:
+            print("WiFi reconnect error, retrying:", e)
+            time.sleep(2)
+
+
+def connect_mqtt_with_retry():
+    while True:
+        try:
+            ensure_wifi_connected()
+            mqtt_client.connect()
+            return
+        except Exception as e:
+            print("MQTT connect error, retrying in 5s:", e)
+            time.sleep(5)
+
+
+connect_mqtt_with_retry()
 print("MQTT connected to", TS_MQTT_BROKER)
 leds.fill(scale_color((0, 255, 0), LED_BRIGHTNESS))  # green = connected
 leds.write()
@@ -159,76 +176,102 @@ print("Gas baseline — NO2: " + str(GAS_BASELINE_NO2) + " | ETH: " + str(GAS_BA
 last_publish = time.monotonic() - PUBLISH_INTERVAL  # publish immediately on first reading
 co2 = temperature = humidity = None  # last known SCD30 values
 while True:
-    # Read sensors
-    light_level = light_sensor.value
-    # Use peak-to-peak amplitude over a short window so the value reacts to speech/music.
-    sound_min = 65535
-    sound_max = 0
-    for _ in range(SOUND_WINDOW_SAMPLES):
-        sample = sound_sensor.value
-        if sample < sound_min:
-            sound_min = sample
-        if sample > sound_max:
-            sound_max = sample
-    sound_level = sound_max - sound_min
+    try:
+        # Read sensors
+        light_level = light_sensor.value
+        # Use peak-to-peak amplitude over a short window so the value reacts to speech/music.
+        sound_min = 65535
+        sound_max = 0
+        for _ in range(SOUND_WINDOW_SAMPLES):
+            sample = sound_sensor.value
+            if sample < sound_min:
+                sound_min = sample
+            if sample > sound_max:
+                sound_max = sample
+        sound_level = sound_max - sound_min
 
-    # Read SCD30 (CO2 + Temperature + Humidity)
-    if scd30.data_available:
-        co2         = scd30.CO2
-        temperature = scd30.temperature + TEMPERATURE_OFFSET
-        humidity    = scd30.relative_humidity
+        # Read SCD30 (CO2 + Temperature + Humidity)
+        if scd30.data_available:
+            co2         = scd30.CO2
+            temperature = scd30.temperature + TEMPERATURE_OFFSET
+            humidity    = scd30.relative_humidity
 
-        print("CO2: " + str(int(co2)) + " ppm | Temp: " + str(round(temperature, 1)) + " C | Humidity: " + str(round(humidity, 1)) + " % | Light: " + str(light_level) + " | Sound: " + str(sound_level))
+            print("CO2: " + str(int(co2)) + " ppm | Temp: " + str(round(temperature, 1)) + " C | Humidity: " + str(round(humidity, 1)) + " % | Light: " + str(light_level) + " | Sound: " + str(sound_level))
 
-        # Show temperature on display
-        display.show(int(temperature))
+            # Show temperature on display
+            display.show(int(temperature))
 
-        # RGB LED: indicate CO2 level (3 colors)
-        if co2 <= CO2_FRESH_MAX:
-            leds.fill(scale_color((0, 0, 255), LED_BRIGHTNESS))     # Fresh air -> Blue
-        elif co2 <= CO2_GOOD_MAX:
-            leds.fill(scale_color((0, 255, 0), LED_BRIGHTNESS))     # Acceptable indoor level -> Green
-        else:
-            leds.fill(scale_color((255, 0, 0), LED_BRIGHTNESS))     # Ventilate room -> Red
-        leds.write()
+            # RGB LED: indicate CO2 level (3 colors)
+            if co2 <= CO2_FRESH_MAX:
+                leds.fill(scale_color((0, 0, 255), LED_BRIGHTNESS))     # Fresh air -> Blue
+            elif co2 <= CO2_GOOD_MAX:
+                leds.fill(scale_color((0, 255, 0), LED_BRIGHTNESS))     # Acceptable indoor level -> Green
+            else:
+                leds.fill(scale_color((255, 0, 0), LED_BRIGHTNESS))     # Ventilate room -> Red
+            leds.write()
 
-        # Red LED alarm for non-CO2 parameters
-        non_co2_not_ok = (
-            humidity < HUMIDITY_MIN or
-            humidity > HUMIDITY_MAX 
-            )
-        red_led.value = non_co2_not_ok
+            # Red LED alarm for non-CO2 parameters
+            non_co2_not_ok = (
+                humidity < HUMIDITY_MIN or
+                humidity > HUMIDITY_MAX
+                )
+            red_led.value = non_co2_not_ok
 
-    # Read Multichannel Gas Sensor v2
-    no2 = read_gas_channel(i2c, 1)   # NO2
-    eth = read_gas_channel(i2c, 2)   # Ethanol (C2H5OH)
-    voc = read_gas_channel(i2c, 3)   # VOC
-    co  = read_gas_channel(i2c, 4)   # CO
-    if no2 is not None:
+        # Read Multichannel Gas Sensor v2
+        no2 = read_gas_channel(i2c, 1)   # NO2
+        eth = read_gas_channel(i2c, 2)   # Ethanol (C2H5OH)
+        voc = read_gas_channel(i2c, 3)   # VOC
+        co  = read_gas_channel(i2c, 4)   # CO
+
         def pct(val, base):
-            if base == 0:
-                return 0
+            if val is None or base == 0:
+                return None
             return int((val - base) * 100 / base)
-        print("Gas - NO2: " + str(no2) + " (" + str(pct(no2, GAS_BASELINE_NO2)) + "%) | ETH: " + str(eth) + " (" + str(pct(eth, GAS_BASELINE_ETH)) + "%) | VOC: " + str(voc) + " (" + str(pct(voc, GAS_BASELINE_VOC)) + "%) | CO: " + str(co) + " (" + str(pct(co, GAS_BASELINE_CO)) + "%)")
 
-    # Publish to ThingSpeak every PUBLISH_INTERVAL seconds
-    now = time.monotonic()
-    if now - last_publish >= PUBLISH_INTERVAL and co2 is not None and no2 is not None:
-        payload = (
-            "field1=" + str(int(co2)) +
-            "&field2=" + str(round(temperature, 1)) +
-            "&field3=" + str(round(humidity, 1)) +
-            "&field4=" + str(light_level) +
-            "&field5=" + str(sound_level) +
-            "&field6=" + str(no2) +
-            "&field7=" + str(voc) +
-            "&field8=" + str(co)
+        def fmt_gas(val, base):
+            if val is None:
+                return "n/a"
+            percent = pct(val, base)
+            if percent is None:
+                return str(val)
+            return str(val) + " (" + str(percent) + "%)"
+
+        print("Gas - NO2: " + fmt_gas(no2, GAS_BASELINE_NO2) + " | ETH: " + fmt_gas(eth, GAS_BASELINE_ETH) + " | VOC: " + fmt_gas(voc, GAS_BASELINE_VOC) + " | CO: " + fmt_gas(co, GAS_BASELINE_CO))
+
+        # Publish to ThingSpeak every PUBLISH_INTERVAL seconds
+        now = time.monotonic()
+        ready_for_publish = (
+            co2 is not None and
+            temperature is not None and
+            humidity is not None and
+            no2 is not None and
+            voc is not None and
+            co is not None
         )
-        try:
-            mqtt_client.publish(TS_MQTT_TOPIC, payload)
-            print("Published to ThingSpeak")
-        except Exception as e:
-            print("Publish error:", e)
-        last_publish = now
+        if now - last_publish >= PUBLISH_INTERVAL and ready_for_publish:
+            payload = (
+                "field1=" + str(int(co2)) +
+                "&field2=" + str(round(temperature, 1)) +
+                "&field3=" + str(round(humidity, 1)) +
+                "&field4=" + str(light_level) +
+                "&field5=" + str(sound_level) +
+                "&field6=" + str(no2) +
+                "&field7=" + str(voc) +
+                "&field8=" + str(co)
+            )
+            try:
+                mqtt_client.publish(TS_MQTT_TOPIC, payload)
+                print("Published to ThingSpeak")
+                last_publish = now
+            except Exception as e:
+                print("Publish error, reconnecting MQTT:", e)
+                try:
+                    mqtt_client.disconnect()
+                except Exception:
+                    pass
+                connect_mqtt_with_retry()
 
-    time.sleep(2.0)
+        time.sleep(2.0)
+    except Exception as e:
+        print("Loop error, continuing:", e)
+        time.sleep(2.0)
