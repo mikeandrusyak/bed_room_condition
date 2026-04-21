@@ -37,6 +37,10 @@ TS_MQTT_BROKER = "mqtt3.thingspeak.com"
 TS_MQTT_TOPIC = "channels/" + secrets.TS_CHANNEL_ID + "/publish"
 PUBLISH_INTERVAL = 15.0  # seconds (ThingSpeak free tier minimum)
 WATCHDOG_TIMEOUT = 60.0  # seconds
+WIFI_RETRY_DELAY = 3.0
+MQTT_RETRY_DELAY = 5.0
+WIFI_MAX_RETRIES_BEFORE_RESET = 5
+MQTT_MAX_RETRIES_BEFORE_RESET = 3
 
 
 def feed_watchdog():
@@ -122,8 +126,9 @@ while not esp.is_connected:
     try:
         feed_watchdog()
         esp.connect_AP(secrets.WIFI_SSID, secrets.WIFI_PASSWORD)
-    except RuntimeError as e:
+    except Exception as e:
         print("WiFi error, retrying:", e)
+        time.sleep(WIFI_RETRY_DELAY)
         feed_watchdog()
 print("WiFi connected, IP:", esp.pretty_ip(esp.ip_address))
 time.sleep(2)  # let DHCP/DNS settle before first socket use
@@ -137,32 +142,67 @@ mqtt_client = MQTT.MQTT(
     socket_pool=pool,
 )
 
+
+def reset_airlift():
+    print("Resetting ESP32 AirLift...")
+    try:
+        mqtt_client.disconnect()
+    except Exception:
+        pass
+    try:
+        esp.disconnect()
+    except Exception:
+        pass
+    try:
+        esp.reset()
+    except Exception:
+        pass
+    time.sleep(2)
+    feed_watchdog()
+
 def ensure_wifi_connected():
     feed_watchdog()
     if esp.is_connected:
         return
     print("WiFi disconnected, reconnecting...")
+    retries = 0
     while not esp.is_connected:
         try:
             feed_watchdog()
             esp.connect_AP(secrets.WIFI_SSID, secrets.WIFI_PASSWORD)
-        except RuntimeError as e:
-            print("WiFi reconnect error, retrying:", e)
-            time.sleep(2)
+            if esp.is_connected:
+                print("WiFi reconnected, IP:", esp.pretty_ip(esp.ip_address))
+                return
+        except Exception as e:
+            retries += 1
+            print("WiFi reconnect error (attempt " + str(retries) + "), retrying:", e)
+            if retries >= WIFI_MAX_RETRIES_BEFORE_RESET:
+                reset_airlift()
+                retries = 0
+            time.sleep(WIFI_RETRY_DELAY)
             feed_watchdog()
 
 
 def connect_mqtt_with_retry():
+    retries = 0
     while True:
         try:
             feed_watchdog()
             ensure_wifi_connected()
+            try:
+                mqtt_client.disconnect()
+            except Exception:
+                pass
             mqtt_client.connect()
             feed_watchdog()
             return
         except Exception as e:
-            print("MQTT connect error, retrying in 5s:", e)
-            time.sleep(5)
+            retries += 1
+            print("MQTT connect error (attempt " + str(retries) + "), retrying in 5s:", e)
+            if retries >= MQTT_MAX_RETRIES_BEFORE_RESET:
+                reset_airlift()
+                retries = 0
+            time.sleep(MQTT_RETRY_DELAY)
             feed_watchdog()
 
 
