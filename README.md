@@ -72,7 +72,7 @@ cp -r code.py secrets.py lib/ library/ /Volumes/CIRCUITPY/
 
 ## System Behavior & Indicators
 
-For a complete logic flow, refer to the [Logic Diagram](file:///Users/workflow/FHNW%20git/FS2026%20git/idb/bed_room_condition/logic_diagram.md).
+For a complete logic flow, refer to the [Logic Diagram](logic_diagram.md).
 
 - **4-Digit Display** — Displays the current temperature in °C (updated every 2 seconds).
 - **RGB LED** — Indicates **CO2 concentration**:
