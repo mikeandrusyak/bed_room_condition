@@ -12,6 +12,7 @@ A project for monitoring room conditions (temperature, humidity, light level) us
 | Temp./humidity sensor | DHT11 | A2 | A2 |
 | 4-digit display | Grove 4-Digit Display (TM1637) | A4 | A4 (CLK), A5 (DIO) |
 | RGB LED | Grove Chainable RGB LED (P9813) | D4 | D9 (CLK), D10 (DATA) |
+| Green LED | Grove Green LED | D2 | D5 |
 
 ---
 
@@ -21,11 +22,6 @@ A project for monitoring room conditions (temperature, humidity, light level) us
 bed_room_condition/
 ├── code.py          # Main code — copied to the board
 └── lib/             # CircuitPython libraries
-    ├── adafruit_dht.mpy
-    ├── chainable_led.py     # P9813 RGB LED driver
-    ├── tm1637lib.py         # 4-Digit Display driver
-    ├── grove_4_digit_display.py
-    └── adafruit_ht16k33/
 ```
 
 ---
@@ -79,6 +75,8 @@ Temp: 22 C | Humidity: 56 % | Light: 31200
 ---
 
 ## How It Works
+
+For a detailed flow of the program logic, see the [Logic Diagram](file:///Users/workflow/FHNW%20git/FS2026%20git/idb/bed_room_condition/logic_diagram.md).
 
 - **Display** — shows the current temperature (°C)
 - **RGB LED** — comfort indicator:

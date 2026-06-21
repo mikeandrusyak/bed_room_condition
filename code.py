@@ -19,7 +19,7 @@ LED_BRIGHTNESS = 0.004          # dimmed further to make colors easier to distin
 TEMPERATURE_OFFSET = -2.0       # SCD30 reads ~2°C high due to board heat
 DISPLAY_CLK_PIN = board.A4
 DISPLAY_DIO_PIN = board.A5
-RED_LED_PIN = board.D5
+GREEN_LED_PIN = board.D5
 SOUND_ANALOG_PIN = board.A2
 SOUND_WINDOW_SAMPLES = 32
 SOUND_ACTIVITY_THRESHOLD = 2500
@@ -95,12 +95,12 @@ num_leds = 1
 leds = chainable_led.P9813(board.D9, board.D10, num_leds)
 leds.reset()
 
-# 7. Grove Red LED (connected to Grove port D2 -> nRF52840 D5)
-red_led = digitalio.DigitalInOut(RED_LED_PIN)
-red_led.direction = digitalio.Direction.OUTPUT
-red_led.value = True
+# 7. Grove Green LED (connected to Grove port D2 -> nRF52840 D5)
+green_led = digitalio.DigitalInOut(GREEN_LED_PIN)
+green_led.direction = digitalio.Direction.OUTPUT
+green_led.value = True
 time.sleep(0.6)
-red_led.value = False
+green_led.value = False
 
 # --- ESP32 AIRLIFT WIFI + MQTT SETUP ---
 
@@ -273,12 +273,12 @@ while True:
                 leds.fill(scale_color((255, 0, 0), LED_BRIGHTNESS))     # Ventilate room -> Red
             leds.write()
 
-            # Red LED alarm for non-CO2 parameters
+            # Green LED alarm for non-CO2 parameters
             non_co2_not_ok = (
                 humidity < HUMIDITY_MIN or
                 humidity > HUMIDITY_MAX
                 )
-            red_led.value = non_co2_not_ok
+            green_led.value = non_co2_not_ok
 
         # Read Multichannel Gas Sensor v2
         no2 = read_gas_channel(i2c, 1)   # NO2
